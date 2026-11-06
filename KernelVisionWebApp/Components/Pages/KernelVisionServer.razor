@@ -1,0 +1,210 @@
+﻿@page "/kernelvisionserver"
+
+@using Microsoft.SemanticKernel
+@inject Kernel kernel
+
+@*Needed because I have a button on the UI form*@
+@rendermode InteractiveServer
+
+@using System.IO
+
+<PageTitle>Vision Page</PageTitle>
+
+<div class="alert alert-info">
+    <h5>Using Microsoft Semantic Kernel SDK ... Openai API Vision</h5>
+</div>
+
+
+@*This button is used to Analyze an image using it's URL address ... which is hard coded as imageUri in the code section *@
+<button class="btn btn-primary me-3" @onclick="@(() => AnalyzeImage(1))">Analyze URL Image</button>
+
+<label class="btn btn-primary">
+    Choose Local Image
+    <InputFile OnChange="OnFileChanged" accept="image/png,image/jpeg" style="display: none;" />
+</label>
+
+<hr />
+
+<div class="row">
+
+    <div class="col-md-3">
+        @if (fileList.Count > 0)
+        {
+            <h5>Select Image </h5>
+            <span>wwwroot folder</span>
+            <ul style="list-style-type: none;padding:0px;margin:0px;">
+                @foreach (var file in fileList)
+                {
+                    <li><span @onclick="@( () => ReadFile(file))" style="cursor:pointer; text-decoration:underline;color:blue">@file</span></li>                   
+                }
+            </ul>
+        }
+    </div>
+    <div class="col-md-9">
+        @if (imageBase64 != null)
+        {
+            @*Here we are displaying the local image that was selected by the user 
+            ... But the .NET implementation of Uri has a length limitation (65520 bytes) so it can only process small images.*@
+            <p>
+                <strong>Selected Image Original Size:@imageFileSize</strong><i>bytes</i>
+                <br />
+                NET implementation <i>may?</i> have a length limitation of 65520 bytes (for <b>Local Images</b>)
+                ... so we display image but disable the Analyze Local Image button if too large. It doesn't seem to be an issue using the
+                wwwroot folder images (See the ReadFile method to note the differences in coding)
+            </p>
+            <img src="@imageBase64" alt="Selected Image" style="max-width: 300px; max-height: 300px;" />
+
+            @*If the image is too big to analyze disable the button *@
+            <button class="btn btn-primary" disabled="@isTooLarge" @onclick="@(() => AnalyzeImage(2))" style="margin-left: 10px;">Analyze Local Image</button>
+        }
+    </div>
+</div>
+
+
+@if (reply != null)
+{
+    <div class="alert alert-info mt-3">
+        <h5>API Response:</h5>
+        @if (isImageURL)
+        {
+            <img src="@imageUri" alt="Selected Image" style="max-width: 300px; max-height: 300px;" />
+            <br />
+        }
+        @reply
+    </div>
+}
+
+
+
+@code {
+
+    private string image;
+    private string imageBase64;
+
+    private bool isImageURL = false; //for the display of the image in the API Response
+    private bool isTooLarge = false; //for the Analyze Local Image button
+
+    private long imageFileSize;
+    IBrowserFile resizedFile; //Used in the OnFileChanged method to store the resized image file if the original is too large to process
+
+    //List of image files in the wwwroot/images directory
+    List<string> fileList = new List<string>();
+
+    //Sample image URLs
+    private string imageUri = "https://theseeker.ca/wp-content/uploads/2023/08/Untitled-design-2023-07-13T120829.979.jpg";
+
+    //The response from the Semantic Kernel API
+    ChatMessageContent reply;
+
+    //create a method to automatically load a set of images on program startup
+    protected override async Task OnInitializedAsync()
+    {
+      
+        string path = Directory.GetCurrentDirectory() + @"\wwwroot\images";
+
+        //GetFiles ... returns an array of the full names (including paths) for the files in the specified directory
+        //[0] = "C:\\Temp\\Blazor\\Vision\\4-BlazorKernelVisionWebAppUpdate\\BlazorKernelVisionWebApp\\BlazorKernelVisionWebApp\\wwwroot\\images\\beach.jpg"
+        var files = Directory.GetFiles(path);
+
+        //GetFileName returns the file name and extension of the specified path string ... basketball.jpg
+        foreach (var file in files)
+        {
+            fileList.Add(Path.GetFileName(file));
+        }
+    }
+
+    // This is the method that gets triggered when the user selects an image
+    private async Task OnFileChanged(InputFileChangeEventArgs e)
+    {
+        isTooLarge = false;
+
+        //The selected file is stored in the File property of the InputFileChangeEventArgs object, which is of type IBrowserFile
+        var file = e.File;
+        imageFileSize = file.Size;
+
+        if (imageFileSize > 65520) // This is the maximum size that the .NET implementation of Uri can handle
+        {
+            isTooLarge = true;
+        }
+
+        var buffer = new byte[512000]; //initialize buffer to 512000 bytes
+
+        if (imageFileSize > 512000) // This is a separate check for the file size just to display the image on screen
+        {
+            // The file is too large
+            resizedFile = await file.RequestImageFileAsync(file.ContentType, 300, 300);
+            buffer = new byte[resizedFile.Size];
+
+            //OpenReadStream max allowed 512000 bytes ... so we need to read in a reduced sized image file
+            var stream = await resizedFile.OpenReadStream().ReadAsync(buffer);
+        }
+        else
+        {
+            buffer = new byte[file.Size];
+            var stream = await file.OpenReadStream().ReadAsync(buffer);
+        }
+
+        image = Convert.ToBase64String(buffer);
+
+        imageBase64 = "data:" + file.ContentType + ";base64," + image;
+
+        StateHasChanged();
+    }
+
+
+    private async Task AnalyzeImage(int type)
+    {
+        //Inject the ChatCompletionService to get the API response from the Kernel
+        var chatCompletionService = kernel.GetRequiredService<IChatCompletionService>();
+
+        //Prompt messages for the chat completion
+        string systemPrompt = "You are a friendly chatbot that helps me analyze images. I will show you an image and you will tell me what you see in it.";
+        string userPrompt = "Analyze the image and tell me what you see in it.";
+
+        //Create a new ChatHistory object with the system prompt
+        var chatHistory = new ChatHistory(systemPrompt);
+
+        //type 1 is for image URL and type 2 is for local image
+        if (type == 1)
+        {
+            isImageURL = true;
+
+            chatHistory.AddUserMessage(new ChatMessageContentItemCollection
+            {
+                new TextContent(userPrompt),
+                new ImageContent(new Uri(imageUri))
+            });
+        }
+        else
+        {
+            isImageURL = false;
+
+            chatHistory.AddUserMessage(new ChatMessageContentItemCollection
+            {
+                new TextContent(userPrompt),
+                new ImageContent(imageBase64) 
+
+            });
+        }
+
+       
+        reply = await chatCompletionService.GetChatMessageContentAsync(chatHistory);
+    }
+
+ 
+
+    private void ReadFile(string file)
+    {
+        var path = Directory.GetCurrentDirectory() + @"\wwwroot\images\" + file;
+        var buffer = File.ReadAllBytes(path);
+        image = Convert.ToBase64String(buffer);
+        imageBase64 = "data:image/jpeg;base64," + image;
+
+        //determine the image file size
+        FileInfo fi = new FileInfo(path);
+        imageFileSize = fi.Length;
+
+        StateHasChanged();
+    }
+
+}

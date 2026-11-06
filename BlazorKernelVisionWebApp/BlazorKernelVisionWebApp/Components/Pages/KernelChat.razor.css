@@ -1,0 +1,65 @@
+﻿.chat-container {
+    height: 400px;
+    overflow-y: auto; /*this will add a vertical scrollbar if contents overflow container*/
+    border: 3px solid #ccc;
+    padding: 10px;
+}
+
+.chat-message {
+    background-color: #f1f1f1;
+    border-radius: 5px;
+    padding: 10px;
+    margin-bottom: 10px;
+}
+
+.user-message {
+    background-color: #e2f3ff; /*light blue color for user question*/
+}
+
+.bot-message {
+    background-color: #d4edda; /*light green color for bot response*/
+}
+
+.message-input {
+    display: flex;
+    margin-top: 20px;
+}
+
+    .message-input input {
+        flex: 1;
+        padding: 10px;
+        border-radius: 5px;
+        border: 1px solid #ccc;
+    }
+
+.message-input-button {
+    margin-left: 10px;
+    padding: 10px;
+    color: #fff;
+    border: none;
+    border-radius: 5px;
+}
+
+.enabled {
+    color: white;
+    cursor: pointer; /*use figure pointer to click on button when allowed*/
+    background-color: #007bff;
+}
+
+.disabled {
+    color: #fff;
+    background-color: red;
+    cursor: not-allowed; /*use circle with line through it to indicate button press not allowed yet*/
+}
+
+.loading-bar {
+    display: none;
+    width: 100%;
+    height: 4px;
+    background-color: #007bff;
+    transition: width 0.3s; /*makes the width of the loading bar go from 0 to 100% over .3s*/
+}
+
+    .loading-bar.show {
+        display: block;
+    }

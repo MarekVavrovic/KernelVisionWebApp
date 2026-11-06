@@ -1,0 +1,106 @@
+﻿@page "/kernelchat"
+
+@using KernelVisionWebApp.Models
+@using Microsoft.SemanticKernel
+@inject Kernel kernel
+
+@rendermode InteractiveServer
+
+<PageTitle>Home</PageTitle>
+
+<h5>Using Microsoft Semantic Kernel SDK</h5>
+
+<div class="chat-container">
+    @foreach (var message in chatMessages)
+    {
+        <div class="chat-message @(message.IsUserMessage ? "user-message" : "bot-message")">
+            @((MarkupString)message.Text)
+        </div>
+    }
+</div>
+
+<div class="message-input">
+
+    <input disabled="@isLoading" type="text" @bind="userInput" placeholder="Type your message here..." />
+
+    <button disabled="@string.IsNullOrEmpty(userInput)" class="@(string.IsNullOrEmpty(userInput) || isLoading ? "disabled" : "enabled")"
+            @onclick="SendMessage">
+        <span>@buttonText</span>
+        <div class="loading-bar @(isLoading ? "show" : "")"></div>
+    </button>
+
+    <div class="loading-bar @(isLoading ? "show" : "")" style="width:@progressWidth"></div>
+
+</div>
+
+
+@code {
+
+    private string buttonText = "Send";
+    private string progressWidth = "0%";
+    private bool isLoading = false;
+    private string userInput = "";
+
+    ChatMessageContent reply;
+    private List<ChatMessage> chatMessages = new List<ChatMessage>();
+
+    private string apiResponse = "";
+
+    private async Task SendMessage()
+    {
+        buttonText = "Sending...";
+        isLoading = true;
+        StateHasChanged();
+
+        try
+        {
+         
+            chatMessages.Add(new ChatMessage(userInput, true));
+
+            apiResponse = "";
+            int messageIndex = -1;         
+
+            await foreach (var message in kernel.InvokePromptStreamingAsync<string>(userInput))
+            {
+
+                // this line processes the incoming message to ensure that newline and tab characters
+                // are appropriately handled for HTML display, and then appends the processed message to the apiResponse string.
+                apiResponse += message.Replace("\n", @"<br>").Replace("\t", @"<tab>");
+
+                //If the messageIndex is -1, it means that the current message is the first message from the API,
+                //so we add a new ChatMessage to the chatMessages list with the apiResponse and set the IsUserMessage property to false
+                //to indicate that it is a bot message. If the messageIndex is not -1, it means that the current message is a continuation
+                if (messageIndex == -1)
+                {
+                    chatMessages.Add(new ChatMessage(apiResponse, false));
+                    messageIndex++;
+                }
+                else
+                {
+                    //If the messageIndex is not -1, it means that the current message is a continuation of the previous message,
+                    //so we update the last ChatMessage in the chatMessages list with the apiResponse
+                    //This ensures that the latest message from the bot is updated with the ongoing response from the API.
+                    chatMessages.LastOrDefault().Text = apiResponse;
+                }
+
+                this.StateHasChanged();
+
+            }
+
+            userInput = "";
+
+        }
+        catch (Exception ex)
+        {
+            apiResponse = "API call failed: " + ex.Message;
+        }
+        finally
+        {
+            buttonText = "Send";
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    
+}

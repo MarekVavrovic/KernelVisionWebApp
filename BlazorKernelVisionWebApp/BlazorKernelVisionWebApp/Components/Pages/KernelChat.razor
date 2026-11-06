@@ -1,0 +1,119 @@
+﻿@page "/kernelchat"
+
+@*Add the SemanticKernel Library and inject an instance of the Kernel Service*@
+@using Microsoft.SemanticKernel
+@inject Kernel kernel
+
+@*Needed because we have a button on the UI form*@
+@rendermode InteractiveServer
+
+<PageTitle>Home</PageTitle>
+
+<h5>Using Microsoft Semantic Kernel SDK</h5>
+
+@*Note the reference to a number of classes ... check out KernelPage.razor.css
+    for the styling of these classes
+*@
+
+<div class="chat-container">
+    @foreach (var message in chatMessages)
+    {
+        <div class="chat-message @(message.IsUserMessage ? "user-message" : "bot-message")">
+            @((MarkupString)message.Text)
+        </div>
+    }
+</div>
+
+<div class="message-input">
+
+    <input disabled="@isLoading" type="text" @bind="userInput" placeholder="Type your message here..." />
+  
+    <button disabled="@string.IsNullOrEmpty(userInput)" class="@(string.IsNullOrEmpty(userInput)||isLoading? "disabled":"enabled")"
+    @onclick="SendMessage">
+        <span>@buttonText</span>
+        <div class="loading-bar @(isLoading ? "show":"")"></div>
+    </button>
+
+    <div class="loading-bar @(isLoading ? "show":"")" style="width:@progressWidth"></div>
+
+</div>
+
+
+
+@code {
+
+    private string buttonText = "Send";
+    private string progressWidth = "0%";
+    private bool isLoading = false;
+    private string userInput = "";
+
+    ChatMessageContent reply;
+
+    //List of chat messages to display
+    //ChatMessage is a simple class with two properties: Text and IsUserMessage (boolean that indicates if the message is from the user or the bot))
+    private List<ChatMessage> chatMessages = new List<ChatMessage>();
+
+    private string apiResponse = "";
+
+    private async Task SendMessage()
+    {
+        buttonText = "Sending...";
+        isLoading = true;
+        StateHasChanged();
+
+        try
+        {
+            //Add the user message to the chat messages list and pass true to indicate that it is a user message
+            chatMessages.Add(new ChatMessage(userInput, true));
+
+            apiResponse = "";
+            int messageIndex = -1;
+
+            //returns an asynchronous stream of messages from OpenAI API,where each message is of type string
+            //See the InvokePromptStreamingAsync method in the Kernel class
+            //https://learn.microsoft.com/en-us/dotnet/api/microsoft.semantickernel.kernel?view=semantic-kernel-dotnet
+
+            await foreach (var message in kernel.InvokePromptStreamingAsync<string>(userInput))
+            {
+
+                // this line processes the incoming message to ensure that newline and tab characters
+                // are appropriately handled for HTML display, and then appends the processed message to the apiResponse string.
+                apiResponse += message.Replace("\n", @"<br>").Replace("\t", @"<tab>");
+
+                //If the messageIndex is -1, it means that the current message is the first message from the API,
+                //so we add a new ChatMessage to the chatMessages list with the apiResponse and set the IsUserMessage property to false
+                //to indicate that it is a bot message. If the messageIndex is not -1, it means that the current message is a continuation
+                if (messageIndex == -1)
+                {
+                    chatMessages.Add(new ChatMessage(apiResponse, false));
+                    messageIndex++;
+                }
+                else
+                {
+                    //If the messageIndex is not -1, it means that the current message is a continuation of the previous message,
+                    //so we update the last ChatMessage in the chatMessages list with the apiResponse
+                    //This ensures that the latest message from the bot is updated with the ongoing response from the API.
+                    chatMessages.LastOrDefault().Text = apiResponse;
+                }
+
+                this.StateHasChanged();
+
+            }
+
+            userInput = "";
+
+        }
+        catch (Exception ex)
+        {
+            apiResponse = "API call failed: " + ex.Message;
+        }
+        finally
+        {
+            buttonText = "Send";
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    
+}
